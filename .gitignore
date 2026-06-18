@@ -1,0 +1,52 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv
+env/
+venv/
+ENV/
+
+# uv (libraries do not pin a lockfile)
+uv.lock
+
+# Environment / secrets
+.env
+*.env
+
+# Test / coverage reports
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage-*.xml
+junit-*.xml
+htmlcov/
+reports/
+
+# Editor / tooling
+.claude/
+.vscode/
+.idea/
+
+# Runtime artifacts
+src/burr/resources/cache/
+*.log
+*.tle
+*.bsp
+*.all
+
+# OS files
+.DS_Store

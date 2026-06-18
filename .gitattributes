@@ -1,0 +1,9 @@
+# Normalize line endings to LF on checkin
+* text=auto eol=lf
+
+# Treat data/binary assets as binary
+*.tle binary
+*.bsp binary
+*.png binary
+*.jpg binary
+*.pdf binary

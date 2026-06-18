@@ -1,0 +1,92 @@
+# Example site profile.
+#
+# A *site* file describes one observatory: where it is, what hardware it has,
+# and how to reach it. Pair it with a *mode preset* from deploy/presets/ that
+# describes the observing strategy:
+#
+#   burr-sk     --site deploy/example/site.yaml --preset deploy/presets/sda.yaml
+#   burr-direct --site deploy/example/site.yaml --preset deploy/presets/survey.yaml
+#
+# The preset is deep-merged on top of this file at run time, so scheduling
+# lives in the preset and everything site-specific lives here.
+app:
+  logging:
+    level: INFO
+
+  # Optional SENPAI image-processing integration (install the `senpai` extra).
+  # Point this at your SENPAI config, or remove the block to disable.
+  # senpai:
+  #   config: /path/to/senpai/resources/configs/local.yaml
+
+  site:
+    name: "Example Observatory"
+    latitude: 41.91639      # decimal degrees, +N
+    longitude: -84.02600    # decimal degrees, +E
+    altitude_km: 0.050
+    # timezone is auto-detected from coordinates
+
+  # Hardware addresses for burr-direct (ASCOM Alpaca / PWI4). Set active: false
+  # to simulate a device, or point host/port at the bundled simulators under
+  # deploy/ASCOM.Alpaca.Simulators and deploy/PWI4.
+  hardware:
+    dome:
+      address: '127.0.0.1'
+      port: 11111
+      device_number: 0
+      active: true
+      open_windows:
+        - nautical_twilight
+        - astronomical_twilight
+        - night
+    camera:
+      address: '127.0.0.1'
+      port: 11111
+      device_number: 0
+      active: true
+      default_binning: 2
+      binning: [1, 2]
+      readout: [Default]
+    weather:
+      address: '127.0.0.1'
+      port: 5580
+      device_number: 0
+      active: true
+    pwi4:
+      host: '127.0.0.1'
+      port: 8220
+      active: true
+    telescope:
+      field_of_view_degree: 2.0
+      ifov_no_binning_arcsec: 0.1
+
+  # SensorKit entity names for burr-sk. Discover them against a running agent
+  # with: burr-sk --bootstrap --host <agent-host>
+  sk:
+    mount_entity: mount1
+    camera_entity: camera1
+    dome_entity: dome1
+    weather_entity: weather1
+    burr_controller_entity: controller1
+    dome_controller_entity: null
+    # Where the SK camera data graph writes FITS frames. Must match the
+    # WriteFile.directory in the camera service config. Used by the flat-field
+    # manager to read back the previous frame and adjust the next exposure.
+    data_root: /data/sk/raw/burr
+
+  weather:
+    rain_rate_threshold: 0.0
+    humidity_threshold: 85.0
+    humidity_duration_minutes: 5
+    recovery_duration_minutes: 30
+    check_interval_seconds: 60
+    max_consecutive_errors: 3
+
+  # Optional Slack status updates (install the `notify` extra and set
+  # SLACK_BOT_TOKEN in the environment).
+  notifications:
+    enabled: false
+    slack_channel: "#burr-example"
+
+  stage: development
+  runtime:
+    output_dir: "/data/burr/"

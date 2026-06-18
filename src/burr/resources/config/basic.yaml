@@ -1,0 +1,65 @@
+app:
+  logging: 
+    level: "INFO"
+  # senpai:
+  #   config: /path/to/senpai/resources/configs/local.yaml
+  calibrations:
+    twilight_flats: true 
+    darks: true 
+    biases: true
+  hardware:
+    dome:
+      address: '127.0.0.1'
+      port: 11111
+      device_number: 0 
+  site:
+    name: "RME"
+    latitude: 20.739722
+    longitude: -156.4542
+    altitude_km: 0.104
+  schedule:
+    twilight_flats:
+      windows:
+        - nautical_twilight
+      collect: true 
+    calsats:
+      windows:
+        - night 
+        - nautical_twilight
+        - civil_twilight
+        - astronomical_twilight
+      collect: true 
+    photometric_standards:
+      windows:
+        - night 
+        - astronomical_twilight
+      minimum_exposure_seconds: 1
+      maximum_exposure_seconds: 10
+      n_exposures: 10
+      minimum_altitude_degrees: 30
+      collect: true 
+    streaks:
+      collect: true
+      minimum_length_pixel: 5
+      maximum_length_pixel: 100
+    coverage:
+      windows:
+        - night
+        - astronomical_twilight
+      collect: true
+      minimum_altitude_degrees: 30
+      minimum_exposure_seconds: 1
+      maximum_exposure_seconds: 10
+      n_exposures: 3
+      healpix_nside: 8
+      sparse_fraction: 0.05
+      min_separation_degrees: 5
+      enable_plotting: true
+  plotting:
+    debug: true
+    review: true
+  stage: development
+  runtime:
+    output_dir: "/data/burr/"
+  notifications:
+    slack_channel: "test-burr"

@@ -1,0 +1,5 @@
+>>> from alpaca.dome import *
+>>> dome=Dome('127.0.0.1:11111',0)
+>>> dome.connected=True
+>>> dome.OpenShutter()
+

@@ -1,0 +1,88 @@
+# Mode preset: Survey.
+#
+# Coverage-heavy (whole-sky mapping is the priority), light streaks (1 per
+# collect for training data without overweighting), moderate photometry and
+# calsats so they don't displace coverage too much.
+#
+# Compose with a site file:
+#   burr-sk --site deploy/example/site.yaml --preset deploy/presets/survey.yaml
+app:
+  stage: production
+  plotting:
+    debug: false
+    review: true
+  schedule:
+    darks:
+      windows: [day]
+      collect: true
+      exposures_per_iteration: 10
+      scheduling:
+        type: one_shot
+    twilight_flats:
+      windows: [nautical_twilight]
+      collect: true
+      n_frames: 50
+      minimum_exposure_seconds: 0.1
+      long_exposure_threshold: 1.0
+      min_counts: 40000
+      max_counts: 50000
+      max_saturation_percentage: 1.0
+      saturation_threshold: null
+      scheduling:
+        type: one_shot
+    lunar_background:
+      windows: [night]
+      collect: true
+      minimum_moon_altitude_degrees: 40
+      maximum_moon_altitude_degrees: 85
+      minimum_moon_phase: 0.2
+      moon_separation_degrees: [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+      minimum_exposure_seconds: 1
+      maximum_exposure_seconds: 5
+      n_exposures: 3
+      scheduling:
+        type: one_shot
+    calsats:
+      windows: [nautical_twilight, astronomical_twilight, night]
+      collect: true
+      tle_provider: spacebook
+      minimum_exposure_seconds: 1
+      maximum_exposure_seconds: 5
+      minimum_altitude_degrees: 40
+      maximum_altitude_degrees: 85
+      scheduling:
+        type: interval
+        minimum_interval_minutes: 15
+        fill_gaps: true
+    photometric_standards:
+      windows: [nautical_twilight, astronomical_twilight, night]
+      collect: true
+      minimum_exposure_seconds: 1
+      maximum_exposure_seconds: 10
+      n_exposures: 5
+      minimum_altitude_degrees: 40
+      maximum_altitude_degrees: 85
+      scheduling:
+        type: time_share
+        target_percentage: 20
+    streaks:
+      collect: true
+      streaks_per_collect: 1
+      minimum_length_pixel: 10
+      maximum_length_pixel: 100
+      minimum_orientation_deg: 0
+      maximum_orientation_deg: 180
+    coverage:
+      windows: [nautical_twilight, astronomical_twilight, night]
+      collect: true
+      minimum_altitude_degrees: 20
+      maximum_altitude_degrees: 85
+      minimum_exposure_seconds: 1
+      maximum_exposure_seconds: 5
+      n_exposures: 3
+      points_per_map: 12
+      min_separation_degrees: 10
+      enable_plotting: true
+      scheduling:
+        type: time_share
+        target_percentage: 60
