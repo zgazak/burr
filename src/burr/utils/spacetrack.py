@@ -53,7 +53,7 @@ class VisibilityWindow(BaseModel):
 class TLE(BaseModel):
     """Represents a single TLE (Two Line Element) entry."""
 
-    norad_id: int = Field(..., description="NORAD Catalog Number")
+    norad_id: str = Field(..., description="NORAD Catalog Number (5-char designator: numeric '00000' or Alpha-5 'A0000')")
     name: str = Field(..., description="Satellite name")
     line0: str = Field(..., description="TLE line 0 (name)")
     line1: str = Field(..., description="TLE line 1")
@@ -349,7 +349,9 @@ class TLE(BaseModel):
     def from_tle_lines(cls, lines: tuple[str, str, str]) -> "TLE":
         """Create a TLE object from three lines of TLE data."""
         name, line1, line2 = [line.strip() for line in lines]
-        norad_id = int(line2.split()[1])
+        # Keep the catalog number as its 5-char designator (Alpha-5 like 'A0000' isn't an int);
+        # zero-pad short numerics so it matches Space-Track's on-wire form.
+        norad_id = line2.split()[1].zfill(5)
         return cls(
             norad_id=norad_id, name=name[2:] if name.startswith("0 ") else name, line0=name, line1=line1, line2=line2
         )
@@ -358,7 +360,7 @@ class TLE(BaseModel):
 class TLECatalog(BaseModel):
     """A collection of TLEs indexed by NORAD ID."""
 
-    tles: Dict[int, TLE] = Field(default_factory=dict, description="TLEs indexed by NORAD ID")
+    tles: Dict[str, TLE] = Field(default_factory=dict, description="TLEs indexed by NORAD ID")
     date: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).strftime("%Y%m%d"),
         description="Date of the catalog in YYYYMMDD format",
@@ -369,11 +371,11 @@ class TLECatalog(BaseModel):
         """Add a TLE to the catalog."""
         self.tles[tle.norad_id] = tle
 
-    def get_tle(self, norad_id: int) -> Optional[TLE]:
+    def get_tle(self, norad_id: str) -> Optional[TLE]:
         """Get a TLE by NORAD ID."""
         return self.tles.get(norad_id)
 
-    def filter_satellites(self, norad_ids: List[int]) -> "TLECatalog":
+    def filter_satellites(self, norad_ids: List[str]) -> "TLECatalog":
         """Create a new catalog with only the specified satellites."""
         filtered = TLECatalog(date=self.date, catalog_type=self.catalog_type)
         for norad_id in norad_ids:
@@ -503,7 +505,7 @@ def tle_num_to_str(tle_num):
     return "%.5i" % tle_num
 
 
-def tle_list_coords(tle_list: List[int] = SUPPORTED_CALSATS, site=None, time=None, min_altitude_deg=25.0) -> List[dict]:
+def tle_list_coords(tle_list: List[str] = SUPPORTED_CALSATS, site=None, time=None, min_altitude_deg=25.0) -> List[dict]:
     """
     Get coordinates for a list of satellites.
 

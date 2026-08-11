@@ -1,6 +1,6 @@
 [project]
 name = "astro-burr"
-version = "0.3.1"
+version = "0.3.2"
 description = "Autonomous calibration and observation scheduling for rapid-deploy SDA telescopes"
 readme = "README.md"
 requires-python = ">=3.13"
