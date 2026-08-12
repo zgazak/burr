@@ -4,6 +4,8 @@ from typing import Dict, List, Optional, NamedTuple
 from dataclasses import dataclass
 from statistics import mean, stdev
 
+from loguru import logger
+
 
 @dataclass
 class CatalogStats:
@@ -143,7 +145,15 @@ def load_catalog(path: Path) -> List[Star]:
         )
         catalog_data.append(star)
 
-    return catalog_data
+    # Guard the one chokepoint every consumer flows through: the VizieR header
+    # block (sandwiched between two dashes lines) can leak in as rows with
+    # NaN/garbage coordinates. Drop anything without usable coordinates so no
+    # downstream caller ever sees a bad Star. (NaN fails every comparison.)
+    valid = [s for s in catalog_data if 0 <= s.ra_deg <= 360 and -90 <= s.dec_deg <= 90]
+    dropped = len(catalog_data) - len(valid)
+    if dropped:
+        logger.warning(f"Dropped {dropped} catalog rows with invalid coordinates")
+    return valid
 
 
 def _parse_float(value: str) -> float:

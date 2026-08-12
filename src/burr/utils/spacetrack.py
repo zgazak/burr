@@ -14,10 +14,25 @@ import json
 from collections import deque
 
 import skyfield
-from skyfield.api import Loader, EarthSatellite, Topos, load
+from functools import lru_cache
+from skyfield.api import Loader, EarthSatellite, Topos
+from skyfield.iokit import load_file
 
-from burr.core.constants import EPHEMERIS_DIR, SPACETRACK_DIR, SUPPORTED_CALSATS
-from burr.utils.ephemeris import EPHEMERIS_FILE
+from burr.core.constants import SPACETRACK_DIR, SUPPORTED_CALSATS
+from burr.utils.ephemeris import EPHEMERIS_FILE, get_ephemeris_file
+
+
+@lru_cache(maxsize=1)
+def _ephemeris():
+    """Load the planetary ephemeris once per process, downloading it if absent.
+
+    skyfield's ``load()`` mishandles an absolute path (it treats the whole path
+    as a remote filename, builds a bogus URL and 404s). ``load_file`` opens a
+    known path directly, and ``get_ephemeris_file`` guarantees the file exists
+    even when ``initialize_engine()`` never ran — e.g. burr driven as an SK
+    plugin, where nothing calls ``ensure_ephemeris()``.
+    """
+    return load_file(str(get_ephemeris_file(EPHEMERIS_FILE)))
 
 
 # Define some well-known LEO satellites
@@ -125,8 +140,7 @@ class TLE(BaseModel):
             # Set up Skyfield objects
             loader = Loader(".")
             ts = loader.timescale(builtin=True)
-            ephemeris_path = str(EPHEMERIS_DIR / EPHEMERIS_FILE)
-            eph_data = load(ephemeris_path)
+            eph_data = _ephemeris()
             sun = eph_data["sun"]
             earth = eph_data["earth"]
 
@@ -219,8 +233,7 @@ class TLE(BaseModel):
             # Set up Skyfield objects
             loader = Loader(".")
             ts = loader.timescale(builtin=True)
-            ephemeris_path = str(EPHEMERIS_DIR / EPHEMERIS_FILE)
-            eph_data = load(ephemeris_path)
+            eph_data = _ephemeris()
             sun = eph_data["sun"]
             earth = eph_data["earth"]
 
@@ -528,8 +541,7 @@ def tle_list_coords(tle_list: List[str] = SUPPORTED_CALSATS, site=None, time=Non
     # Set up Skyfield objects
     loader = Loader(".")
     ts = loader.timescale(builtin=True)
-    ephemeris_path = str(EPHEMERIS_DIR / EPHEMERIS_FILE)  # Convert Path to string
-    eph_data = load(ephemeris_path)
+    eph_data = _ephemeris()
     sun = eph_data["sun"]
     earth = eph_data["earth"]
 
