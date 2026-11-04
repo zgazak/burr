@@ -91,6 +91,27 @@ class Twilight(BaseModel):
     end_time: datetime
 
 
+def _header_text(header: fits.Header, key: str) -> str:
+    """Stripped string value of ``key``; a missing or valueless card is ``""``."""
+    value = header.get(key)
+    return "" if value is None else str(value).strip()
+
+
+def validate_sk_flat_header(header: fits.Header) -> tuple[str, str]:
+    """Return the camera and filter after validating a SensorKit flat."""
+    image_type = _header_text(header, "IMAGETYP")
+    camera = _header_text(header, "UNITID")
+    filter_name = _header_text(header, "FILTER")
+
+    if image_type.upper() != "FLAT":
+        raise ValueError(f"expected IMAGETYP=FLAT, got {image_type!r}")
+    if not camera:
+        raise ValueError("Sensorkit flat is missing UNITID")
+    if not filter_name:
+        raise ValueError("Sensorkit flat is missing FILTER")
+    return camera, filter_name
+
+
 def load_image_hdu(path: Path) -> tuple[np.ndarray, fits.Header]:
     """Return ``(data, header)`` of the first HDU in ``path`` holding an image.
 
@@ -98,7 +119,7 @@ def load_image_hdu(path: Path) -> tuple[np.ndarray, fits.Header]:
     ``CompImageHDU``, so the pixels are not in HDU 0. The returned header
     is the image HDU's own (where SK puts EXPTIME, UNITID, IMAGETYP, ...).
     """
-    with fits.open(path) as hdul:
+    with fits.open(path, memmap=False) as hdul:
         for hdu in hdul:
             if hdu.data is not None and hdu.data.ndim >= 2:
                 return np.asarray(hdu.data), hdu.header.copy()
@@ -338,7 +359,13 @@ class FlatFieldManager:
             logger.info(f"Processing flat field frame: {frame_path}")
 
             data, header = load_image_hdu(frame_path)
-            camera = str(header.get("UNITID") or (frame_path.parent.name if device_control is None else DEFAULT_CAMERA))
+            if device_control is None:
+                # SensorKit mode: identity must come from FITs header
+                camera, filter_name = validate_sk_flat_header(header)
+            else:
+                camera = str(header.get("UNITID") or DEFAULT_CAMERA).strip()
+                filter_name = str(header.get("FILTER", "")).strip() or None
+
             state = self.cameras.setdefault(camera, CameraFlatState())
 
             exposure_time = float(header.get("EXPTIME", 0) or self.current_exposure)
@@ -374,11 +401,11 @@ class FlatFieldManager:
             logger.info(f"[{camera}] ideal next exposure: {state.next_exposure:.3f}s")
 
             if is_good:
-                self._save_good_frame(camera, state, frame_path, stats, exposure_time, device_control)
+                self._save_good_frame(camera, filter_name, state, frame_path, stats, exposure_time, device_control)
             elif state.good_frames >= self.target_flats:
                 logger.info(f"[{camera}] already has {state.good_frames} flats — frame not kept")
             else:
-                self._log_rejection(camera, stats, exposure_time, counts_good, saturation_good)
+                self._log_rejection(camera, filter_name, stats, exposure_time, counts_good, saturation_good)
 
             return is_good
 
@@ -390,6 +417,7 @@ class FlatFieldManager:
     def _save_good_frame(
         self,
         camera: str,
+        filter_name: str | None,
         state: CameraFlatState,
         frame_path: Path,
         stats: FrameStats,
@@ -415,6 +443,7 @@ class FlatFieldManager:
             f"{state.good_frames}/{self.target_flats} flats collected",
             {
                 "camera": camera,
+                "filter": filter_name,
                 "frame_number": state.good_frames,
                 "median_counts": stats.average_counts,
                 "saturation_percentage": stats.saturation_percentage,
@@ -425,7 +454,7 @@ class FlatFieldManager:
         )
 
         extra_headers = {
-            "IMAGETYP": ("Flat Field", "Type of image"),
+            "IMAGETYP": ("FLAT", "Type of image"),
             "MEDIAN": (stats.median_counts, "Clipped median counts in cutout"),
             "MEAN": (stats.average_counts, "Clipped mean counts in cutout"),
             "STDDEV": (stats.std_counts, "Clipped std dev of counts in cutout"),
@@ -435,6 +464,10 @@ class FlatFieldManager:
             "SATPCT": (stats.saturation_percentage, "Percentage of saturated pixels"),
             "SATTHRES": (stats.saturation_threshold, "Saturation threshold used"),
         }
+        if camera != DEFAULT_CAMERA:
+            extra_headers["UNITID"] = (camera, "Camera unit identifier")
+        if filter_name is not None:
+            extra_headers["FILTER"] = (filter_name, "Filter reported by the camera")
 
         # Save using device control's save_fits to include all metadata
         # (direct path), or copy the SK-written FITS and stamp
@@ -450,7 +483,7 @@ class FlatFieldManager:
             self._copy_and_stamp_flat(src=frame_path, dst=output_path, extra_headers=extra_headers)
 
     def _log_rejection(
-        self, camera: str, stats: FrameStats, exposure_time: float, counts_good: bool, saturation_good: bool
+        self, camera: str, filter_name: str | None, stats: FrameStats, exposure_time: float, counts_good: bool, saturation_good: bool
     ) -> None:
         """Log why a flat frame was rejected, to the log and run history."""
         rejection_reasons = []
@@ -471,6 +504,7 @@ class FlatFieldManager:
             f"Frame rejected: {reason}",
             {
                 "camera": camera,
+                "filter": filter_name,
                 "median_counts": stats.average_counts,
                 "saturation_percentage": stats.saturation_percentage,
                 "exposure_time": exposure_time,

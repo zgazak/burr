@@ -4,30 +4,54 @@ SK's data graph writes each camera's frame as an empty primary HDU plus a
 CompImageHDU, named by the controller's FileNameTemplate rather than burr's,
 and only after the collect task has returned. These tests build frames in
 that shape for several cameras and check the manager finds, measures and
-counts them per camera.
+counts them per camera, and that SK flat identity headers (IMAGETYP, UNITID,
+FILTER) are validated and normalised.
 """
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from astropy.io import fits
 
 from burr.core.config import TwilightFlatsConfig
 from burr.task_source.flats.manager import FlatFieldManager, load_image_hdu
 
 
-def _write_sk_frame(path, level, *, unit, exptime=1.0, imagetyp="flat", date_obs=None):
-    """Write a frame the way SK's compress_fits + write_file do."""
+def _write_sk_frame(
+    path,
+    level,
+    *,
+    unit="C0",
+    filter_name="Lum",
+    exptime=1.0,
+    imagetyp="flat",
+    date_obs=None,
+    omit=(),
+):
+    """Write a frame the way SK's compress_fits + write_file do.
+
+    ``unit``, ``filter_name`` and ``imagetyp`` set the UNITID, FILTER and
+    IMAGETYP cards; passing ``None`` writes the card with an undefined value.
+    Card names in ``omit`` are left out of the header entirely.
+    """
     rng = np.random.default_rng(0)
     data = rng.normal(level, 50, size=(400, 600)).clip(0, 65520).astype(np.int32)
+    cards = {
+        "IMAGETYP": imagetyp,
+        "EXPTIME": exptime,
+        "UNITID": unit,
+        "FILTER": filter_name,
+        "DATE-OBS": (date_obs or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%S.%f"),
+    }
     header = fits.Header()
-    header["IMAGETYP"] = imagetyp
-    header["EXPTIME"] = exptime
-    header["UNITID"] = unit
-    header["DATE-OBS"] = (date_obs or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    for key, value in cards.items():
+        if key not in omit:
+            header[key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
-    fits.HDUList([fits.PrimaryHDU(), fits.CompImageHDU(data=data, header=header)]).writeto(path)
+    hdus = [fits.PrimaryHDU(), fits.CompImageHDU(data=data, header=header)]
+    fits.HDUList(hdus).writeto(path)
 
 
 def _manager(tmp_path, *, local_midnight, **overrides):
@@ -125,3 +149,67 @@ def test_saturation_autodetect_for_12bit_in_int32(tmp_path):
     pct, threshold = manager._calculate_saturation_percentage(data)
     assert threshold < 65520
     assert np.isclose(pct, 0.1)
+
+
+def _image_header(path):
+    """Header of the image HDU (HDU 1 in an SK-format file)."""
+    return load_image_hdu(path)[1]
+
+
+def _saved(manager):
+    """flat_field_saved history entries."""
+    commands = manager.run.executed_commands
+    return [cmd for cmd in commands if cmd["command"] == "flat_field_saved"]
+
+
+def _processed_fits(tmp_path):
+    flats = tmp_path / "processed" / "data" / "flats"
+    return sorted(flats.rglob("*.fits")) if flats.exists() else []
+
+
+def test_sk_flat_metadata_is_normalised_and_preserved(tmp_path):
+    manager = _manager(tmp_path, local_midnight=datetime.now(UTC) + timedelta(hours=4))
+    source = tmp_path / "raw" / "Huntsman" / "C1" / "uuid-a_0.fits"
+    _write_sk_frame(
+        source, 45000, unit=" C1 ", filter_name=" Lum ", imagetyp=" flat ", exptime=1.5
+    )
+    source_bytes = source.read_bytes()
+
+    assert manager.process_exposure(str(source), device_control=None) is True
+
+    output = tmp_path / "processed" / "data" / "flats" / "C1" / "flat_001.fits"
+    assert _processed_fits(tmp_path) == [output]
+    header = _image_header(output)
+    assert header["IMAGETYP"] == "FLAT"
+    assert header["UNITID"] == "C1"
+    assert header["FILTER"] == "Lum"
+    assert header["EXPTIME"] == 1.5
+
+    assert source.read_bytes() == source_bytes
+
+    (entry,) = _saved(manager)
+    assert entry["metadata"]["camera"] == "C1"
+    assert entry["metadata"]["filter"] == "Lum"
+    assert set(manager.cameras) == {"C1"}
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        pytest.param({"omit": {"UNITID"}}, id="missing-unitid"),
+        pytest.param({"unit": None}, id="unitid-none"),
+        pytest.param({"omit": {"FILTER"}}, id="missing-filter"),
+        pytest.param({"filter_name": None}, id="filter-none"),
+        pytest.param({"imagetyp": "light"}, id="imagetyp-light"),
+        pytest.param({"omit": {"IMAGETYP"}}, id="missing-imagetyp"),
+    ],
+)
+def test_sk_flat_with_invalid_identity_headers_is_rejected(tmp_path, frame):
+    manager = _manager(tmp_path, local_midnight=datetime.now(UTC) + timedelta(hours=4))
+    source = tmp_path / "raw" / "Huntsman" / "C1" / "uuid-a_0.fits"
+    _write_sk_frame(source, 45000, **frame)
+
+    assert manager.process_exposure(str(source), device_control=None) is False
+    assert manager.cameras == {}
+    assert _processed_fits(tmp_path) == []
+    assert _saved(manager) == []
