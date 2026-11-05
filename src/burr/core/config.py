@@ -130,7 +130,22 @@ class TwilightFlatsConfig(BaseModel):
         default=None, description="Saturation threshold in ADU (auto-detect if None)"
     )
     long_exposure_threshold: float = Field(
-        default=5.0, description="Threshold in seconds above which to use sky brightness trend"
+        default=5.0, description="Deprecated: superseded by sky_doubling_seconds; accepted and ignored"
+    )
+    maximum_exposure_seconds: float = Field(default=60.0, description="Maximum exposure time in seconds")
+    sky_doubling_seconds: float = Field(
+        default=180.0,
+        description=(
+            "Twilight sky brightness changes by 2x every this many seconds. The next exposure is "
+            "scaled by 2**(elapsed/sky_doubling_seconds): longer at dusk, shorter at dawn"
+        ),
+    )
+    cutout_size: Optional[int] = Field(
+        default=300,
+        description="Side of the central box (pixels) used for count statistics; limits vignetting bias. None = full frame",
+    )
+    frame_settle_seconds: float = Field(
+        default=30.0, description="SK mode: how long to wait for camera FITS writes to land after a collect"
     )
     scheduling: OneTimeSchedulingConfig = Field(
         default_factory=OneTimeSchedulingConfig, description="Scheduling configuration"
