@@ -163,7 +163,10 @@ class LightingSchedule(BaseModel):
         site : SiteMetadata
             Location information
         date : datetime
-            Date for calculation (time will be ignored, using local midnight)
+            Any time in the observing night to schedule. Nights run local noon to noon, so a
+            time before local noon belongs to the night ending that morning and a time from noon
+            on to the night starting that evening; a local midnight selects the night centered on
+            it. Naive datetimes are taken as site-local.
 
         Returns
         -------
@@ -176,7 +179,6 @@ class LightingSchedule(BaseModel):
             # Get local timezone and calculate midnight with smart logic
             local_tz = site.get_timezone()
 
-            # Use current time to determine which observing night we're in
             current_utc = datetime.now(ZoneInfo("UTC"))
             current_local = current_utc.astimezone(local_tz)
 
@@ -188,19 +190,18 @@ class LightingSchedule(BaseModel):
                 # Convert to local timezone
                 date_local = date.astimezone(local_tz)
 
-            # For astronomical observations, determine which observing night we're in based on CURRENT time
-            # The "observing night" starts at noon and ends at noon the next day
-            # This ensures evening twilights are at the beginning of the schedule
-            local_noon = current_local.replace(hour=12, minute=0, second=0, microsecond=0)
+            # Determine which observing night `date` falls in. The "observing night" starts at noon
+            # and ends at noon the next day, so evening twilights are at the start of the schedule.
+            # This must follow `date`, not the wall clock: a run resumed on a later night recomputes
+            # its schedule from its own observation date, and has to keep that night's schedule.
+            local_noon = date_local.replace(hour=12, minute=0, second=0, microsecond=0)
 
-            if current_local < local_noon:
-                # Before noon - we're in the morning after an observing night
-                # Use the midnight that just passed (start of current day)
-                local_midnight = current_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            if date_local < local_noon:
+                # Before noon - the morning after an observing night: the midnight just passed
+                local_midnight = date_local.replace(hour=0, minute=0, second=0, microsecond=0)
             else:
-                # After noon - we're in the afternoon/evening, preparing for tonight's observations
-                # Use the midnight that's coming tonight (start of next day)
-                local_midnight = current_local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+                # Noon or later - the afternoon/evening before a night: the coming midnight
+                local_midnight = date_local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
             # Ensure timezone awareness
             if local_midnight.tzinfo is None:
